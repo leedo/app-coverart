@@ -51,8 +51,8 @@ sub search {
 
     my $query = $req->param("query");
 
-    if (my $uris = $self->cache->get("query-$query")) {
-      $self->get_release_data($uris, $respond);
+    if (my $releases = $self->cache->get("query-$query")) {
+      $self->get_release_data($releases, $respond);
     }
     else {
       my $search = $self->discogs_uri("search", type => "releases", q => $query);
@@ -61,44 +61,46 @@ sub search {
         my ($body, $headers) = @_;
         gunzip \$body => \(my $xml);
 
-        my $uris = [];
+        my $releases = [];
         my $xs = XMLin($xml, ForceArray => ['result']);
 
         if ($xs->{stat} eq 'ok' && $xs->{searchresults}{numResults} > 0) {
-          $uris = [ map {$_->{uri}} @{ $xs->{searchresults}{result}} ];
-          $self->cache->set("query-$query", $uris, 60 * 60 * 24);
+          $releases = [ map {[$_->{title}, $_->{uri}]} @{ $xs->{searchresults}{result}} ];
+          $self->cache->set("query-$query", $releases, 60 * 60 * 24);
         }
-        $self->get_release_data($uris, $respond);
+        $self->get_release_data($releases, $respond);
       };
     }
   }
 }
 
 sub get_release_data {
-  my ($self, $uris, $respond) = @_;
+  my ($self, $releases, $respond) = @_;
 
   my $images = [];
-  my $count = scalar @$uris;
+  my $count = scalar @$releases;
 
-  if (!@$uris) {
+  if (!@$releases) {
     $respond->([200, ["Content-Type", "text/plain"], [to_json []]]);
   }
 
   my $next = sub {
     my $more = shift;
-    push @$images, @$more;
+    push @$images, @$more if $more;
     $count--;
     if (!$count) {
-      $respond->([200, ["Content-Type", "text/plain"], [to_json $images]]);
+      $respond->([200, ["Content-Type", "text/plain"], [to_json $images, {utf8 => 1}]]);
     }
   };
 
-  for my $uri (@$uris) {
+  for my $release (@$releases) {
+    my ($title, $uri) = @$release;
     my ($id) = ($uri =~ /(\d+)$/);
     my $release = $self->discogs_uri("release/$id");
 
     if (my $more = $self->cache->get("release-$id")) {
       $next->($more); 
+      next;
     }
           
     http_get $release, headers => {"Accept-Encoding" => "gzip"}, sub {
@@ -106,11 +108,13 @@ sub get_release_data {
       gunzip \$body => \(my $xml);
 
       my $xs = XMLin($xml, ForceArray => ['image']);
+      my $more = [];
       if ($xs->{stat} eq 'ok' && $xs->{release} > 0) {
-        my $more = [ map {$_->{uri}} @{ $xs->{release}{images}{image} } ];
+        $more = $xs->{release}{images}{image};
+        $more = [ map {$_->{title} = $title; $_} @$more ];
         $self->cache->set("release-$id", $more, 60 * 60 * 24 * 30);
-        $next->($more);
       }
+      $next->($more);
     };
   }
 }
