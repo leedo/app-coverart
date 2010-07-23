@@ -40,7 +40,7 @@ sub call {
     return $self->search($req);
   }
 
-  return $self->not_found;
+  return [404, ["Content-Type", "text/plain"], ["not found"]];
 }
 
 sub search {
@@ -129,15 +129,6 @@ sub discogs_uri {
   }
 
   return $uri->canonical;
-}
-
-sub not_found {
-  return [404, ["Content-Type", "text/plain"], ["not found"]];
-}
-
-sub render {
-  my ($self, $template, @data) = @_;
-  $self->template->render_file("$template.html", @data);
 }
 
 1;
