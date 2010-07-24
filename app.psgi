@@ -7,8 +7,8 @@ my $app = App::Coverart->new(api_key => "5b4bea98ec", cache_root => "./var/cache
 
 builder {
   enable "Plack::Middleware::Static",
-            path => qr{^/(js|css)/}, root => './htdocs/';
+            path => qr{^/(js|css|image)/}, root => './static/';
   mount "/api" => $app;
-  mount "/" => Plack::App::File->new(file => "./htdocs/index.html");
-  mount "/image" => Web::ImageProxy->new(cache_root => "./var/cache")->to_app;
+  mount "/cover" => Web::ImageProxy->new(cache_root => "./var/cache")->to_app;
+  mount "/" => Plack::App::File->new(file => "./static/index.html");
 }
