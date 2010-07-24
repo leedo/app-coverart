@@ -11,4 +11,5 @@ builder {
   mount "/api" => $app;
   mount "/" => Plack::App::File->new(file => "./htdocs/index.html");
   mount "/image" => Web::ImageProxy->new(cache_root => "./var/cache")->to_app;
+  mount "/favicon.ico" => sub {[404, ["Content-Type", "text/plain"], ["not found"]]};
 }
