@@ -1,0 +1,109 @@
+<html>
+  <head>
+    <link type="text/css" rel="stylesheet" href="css/coverart.css" />
+    <script src="http://ajax.googleapis.com/ajax/libs/prototype/1.6.1/prototype.js" type="text/javascript"></script>
+    <script type="text/javascript">
+      document.observe("dom:loaded", function() {
+        var timer;
+        var proxy = "/image/";
+        $('images').observe("mouseover", function(e) {
+          e.stop();
+          var li = e.findElement("li");
+          if (li) {
+            if (timer) clearTimeout(timer);
+            if (li.down("div.popup")) {
+              return;
+            }
+            timer = setTimeout( function () {
+              var thumb = li.down("img.thumb");
+              $('images').select("div.popup").invoke("remove");
+              var meta = thumb.getStorage().get("meta");
+              var width = Math.min(250, meta.width);
+              var height = Math.min(250, meta.height);
+              var img = new Element("img");
+              var link = new Element("a").addClassName("outgoing");
+              var div = new Element("div").addClassName("popup");
+
+              var offset = li.viewportOffset();
+              var scroll = document.viewport.getScrollOffsets();
+
+              var bottom = scroll.top + document.viewport.getHeight();
+              var right = scroll.left + document.viewport.getWidth();
+
+              img.src = proxy + meta.uri;
+              img.width = width;
+              img.height = height;
+              link.href = proxy + meta.uri;
+              link.target = "_blank";
+              link.insert(img);
+              div.insert(link);
+              div.insert('<p><span class="dimensions">'+meta.width+' <span class="ex">x</span> '+meta.height+'</span><span class="title">'+meta.title+'</span></p>');
+              li.insert(div);
+
+              var left = offset.left + scroll.left;
+              var left_overflow = ((div.getWidth() - li.getWidth()) / 2);
+              left = Math.max(0, left - left_overflow);
+              left = Math.min(left, right - div.getWidth());
+
+              var top = offset.top + scroll.top;
+              var top_overflow = ((div.getHeight() - li.getHeight()) / 2);
+              top = Math.max(0, top - top_overflow);
+              top = Math.min(top, bottom - div.getHeight());
+
+              div.setStyle({
+                left: left+"px",
+                top: top+"px",
+                width: width,
+                visibility: "visible",
+              });
+            }, 500);
+          }
+        });
+        /*
+        document.observe("mouseout", function(e) {
+          if (!e.findElement("div#images")) {
+            $('images').select("div.popup").invoke("remove");
+            if (timer) clearTimeout(timer);
+          }
+        });
+        */
+        document.observe("click", function(e) {
+          if (!e.findElement("li"))
+            $('images').select("div.popup").invoke("remove");
+        });
+        $('images').observe("click", function(e) {
+          if (!e.findElement("a.outgoing"))
+            e.stop();
+        });
+        $('search').observe("submit", function(e) {
+          e.stop();
+          new Ajax.Request("api", {
+            parameters: {query: $('query').value},
+            onSuccess: function(transport) {
+              var data = transport.responseText.evalJSON();
+              var list = $('images');
+              list.innerHTML = "";
+              data.each(function (image) {
+                var li = new Element("li");
+                var img = new Element("img").addClassName("thumb");
+                var meta = img.getStorage();
+                meta.set("meta", image);
+                img.src = proxy + image.uri150;
+                li.insert(img);
+                list.insert(li);
+              });
+            }
+          });
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <form id="search">
+      <input type="search" id="query" name="query" placeholder="Artist and album name" value="" />
+      <input type="submit" id="submit" value="Search" />
+    </form>
+    <ul id="images">
+    </ul>
+  </body>
+</html>
