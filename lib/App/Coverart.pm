@@ -17,12 +17,20 @@ has api_key => (
 
 has cache => (
   is => "ro",
+  lazy => 1,
   default => sub {
+    my $self = shift;
     CHI->new(
       driver => "File",
-      root_dir => "./var/cache",
+      root_dir => $self->cache_root,
+      namespace => "discogs",
     );
   }
+);
+
+has cache_root => (
+  is => "ro",
+  default => "./var/cache"
 );
 
 sub to_psgi {
@@ -35,12 +43,7 @@ sub to_psgi {
 sub call {
   my ($self, $env) = @_;
   my $req = Plack::Request->new($env);
-  
-  if ($req->path_info eq "/") {
-    return $self->search($req);
-  }
-
-  return [404, ["Content-Type", "text/plain"], ["not found"]];
+  return $self->search($req);
 }
 
 sub search {
