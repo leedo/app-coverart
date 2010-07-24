@@ -90,6 +90,8 @@ sub get_release_data {
 
   my $images = [];
   my $count = scalar @$releases;
+  my @downloads;
+  my $timer;
 
   if (!@$releases) {
     $respond->([200, ["Content-Type", "text/json"], ["[]"]]);
@@ -99,11 +101,19 @@ sub get_release_data {
     my $more = shift;
     push @$images, @$more if $more;
     $count--;
-    if (!$count) {
+    if ($count <= 0) {
+      undef $timer; # cancel timer
       $respond->([200, ["Content-Type", "text/json"], [to_json $images, {utf8 => 1}]]);
     }
   };
 
+  # after 10 seconds just send what we have
+  $timer = AnyEvent->timer(after => 10, cb => sub {
+    $count = 0;
+    @downloads = (); # cancel any downloads
+    $next->();
+  });
+ 
   for my $release (@$releases) {
     my ($title, $uri) = @$release;
     my ($id) = ($uri =~ /(\d+)$/);
@@ -114,7 +124,7 @@ sub get_release_data {
       next;
     }
           
-    http_get $release, headers => {"Accept-Encoding" => "gzip"}, sub {
+    my $download = http_get $release, headers => {"Accept-Encoding" => "gzip"}, sub {
       my ($body, $headers) = @_;
       gunzip \$body => \(my $xml);
 
@@ -127,6 +137,7 @@ sub get_release_data {
       }
       $next->($more);
     };
+    push @downloads, $download;
   }
 }
 
