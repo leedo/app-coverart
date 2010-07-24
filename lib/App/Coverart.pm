@@ -50,6 +50,12 @@ sub search {
     my $respond = shift;
 
     my $query = $req->param("query");
+    my $empty = [200, ['Content-Type', 'text/json'], ["[]"]];
+
+    if (!$query) {
+      $respond->($empty);
+      return;
+    }
 
     if (my $releases = $self->cache->get("query-$query")) {
       $self->get_release_data($releases, $respond);
@@ -61,14 +67,19 @@ sub search {
         my ($body, $headers) = @_;
         gunzip \$body => \(my $xml);
 
-        my $releases = [];
         my $xs = XMLin($xml, ForceArray => ['result']);
 
         if ($xs->{stat} eq 'ok' && $xs->{searchresults}{numResults} > 0) {
-          $releases = [ map {[$_->{title}, $_->{uri}]} @{ $xs->{searchresults}{result}} ];
+          my  $releases = [ map {[$_->{title}, $_->{uri}]} @{ $xs->{searchresults}{result}} ];
           $self->cache->set("query-$query", $releases, 60 * 60 * 24);
+          if (@$releases) {
+            # get images for each release
+            $self->get_release_data($releases, $respond);
+            return;
+          }
         }
-        $self->get_release_data($releases, $respond);
+        # fall back to empty response
+        $respond->($empty);
       };
     }
   }
@@ -81,7 +92,7 @@ sub get_release_data {
   my $count = scalar @$releases;
 
   if (!@$releases) {
-    $respond->([200, ["Content-Type", "text/plain"], [to_json []]]);
+    $respond->([200, ["Content-Type", "text/json"], ["[]"]]);
   }
 
   my $next = sub {
@@ -89,7 +100,7 @@ sub get_release_data {
     push @$images, @$more if $more;
     $count--;
     if (!$count) {
-      $respond->([200, ["Content-Type", "text/plain"], [to_json $images, {utf8 => 1}]]);
+      $respond->([200, ["Content-Type", "text/json"], [to_json $images, {utf8 => 1}]]);
     }
   };
 
