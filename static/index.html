@@ -1,92 +1,152 @@
 <html>
   <head>
-    <link type="text/css" rel="stylesheet" href="css/coverart.css" />
-    <script src="http://ajax.googleapis.com/ajax/libs/prototype/1.6.1/prototype.js" type="text/javascript"></script>
+    <title>Cover art search</title>
+    <link type="text/css" rel="stylesheet" href="/coverart/css/coverart.css" />
+    <script src="/coverart/js/prototype.js" type="text/javascript"></script>
     <script type="text/javascript">
       document.observe("dom:loaded", function() {
         var timer;
-        var proxy = "/cover/";
+        var proxy = "/coverart/cover/";
+        var active;
+
+        var addPopup = function(li) {
+          var thumb = li.down("img.thumb");
+          var meta = thumb.getStorage().get("meta");
+          var img = new Element("img");
+          var link = new Element("a").addClassName("outgoing");
+          div = new Element("div").addClassName("popup");
+          div.addClassName("loading");
+
+          img.setStyle({visibility: "hidden"});
+          img.src = proxy + meta.uri;
+          var width, height;
+
+          if (meta.width > meta.height) {
+            width = Math.min(250, meta.width);
+            height = width * (meta.height / meta.width);
+          } else {
+            height = Math.min(250, meta.height);
+            width = height * (meta.width / meta.height);
+          }
+
+          img.width = width;
+          img.height = height;
+          img.observe("load", function(e) {
+            var img = e.findElement("img");
+            img.setStyle({
+              visibility: "visible"
+            });
+            img.up("div.popup").removeClassName("loading");
+          });
+          div.setStyle({width: width});
+          link.href = proxy + meta.uri;
+          link.target = "_blank";
+          link.insert(img);
+          div.insert(link);
+          div.insert('<p><span class="dimensions">'+meta.width+' <span class="ex">x</span> '+meta.height+'</span><span class="title">'+meta.title+'</span></p>');
+          li.insert(div);
+          return div;
+        };
+
+        var viewportHeight = function() {
+          return Prototype.Browser.IE ? 
+            // IE Cases
+            // Test for IE 5-7 Quirks and IE 4
+            (!(document.documentElement.clientHeight) 
+            || (document.documentElement.clientHeight === 0)) ?
+            // IE 5-7 Quirks and IE 4 case
+            document.body.clientHeight : 
+            //IE 6+ Strict Case
+            document.documentElement.clientHeight:
+            // Gecko and Other DOM compliant case
+            window.innerHeight; 
+        };
+
+        var hidePopups = function() {
+          $('images').select("div.popup").invoke("hide");
+          active = undefined;
+        };
+
+        var positionPopup = function(li) {
+          var div = li.down("div.popup");
+
+          var offset = li.viewportOffset();
+          var scroll = document.viewport.getScrollOffsets();
+
+          var bottom = scroll.top + viewportHeight();
+          var right = scroll.left + document.viewport.getWidth();
+
+          var left = offset.left + scroll.left;
+          var left_overflow = ((div.getWidth() - li.getWidth()) / 2);
+          left = Math.max(scroll.left + 5, left - left_overflow);
+          left = Math.min(left, right - div.getWidth() - 15);
+
+          var top = offset.top + scroll.top;
+          var top_overflow = ((div.getHeight() - li.getHeight()) / 2);
+          top = Math.max(scroll.top + 50, top - top_overflow);
+          top = Math.min(top, bottom - div.getHeight() - 15);
+
+          div.setStyle({
+            left: left+"px",
+            top: top+"px",
+            visibility: "visible",
+          });
+        }
+
         $('images').observe("mouseover", function(e) {
           e.stop();
           var li = e.findElement("li");
           if (li) {
+            if (li == active) return;
+            hidePopups();
+            active = li;
             if (timer) clearTimeout(timer);
-            timer = setTimeout( function () {
 
+            timer = setTimeout( function () {
               if (li.down("div.popup")) {
                 li.down("div.popup").show();
-                return;
               }
-
-              var thumb = li.down("img.thumb");
-              $('images').select("div.popup").invoke("hide");
-              var meta = thumb.getStorage().get("meta");
-              var width = Math.min(250, meta.width);
-              var height = Math.min(250, meta.height);
-              var img = new Element("img").addClassName("loading");
-              var link = new Element("a").addClassName("outgoing");
-              var div = new Element("div").addClassName("popup");
-
-              var offset = li.viewportOffset();
-              var scroll = document.viewport.getScrollOffsets();
-
-              var bottom = scroll.top + document.viewport.getHeight();
-              var right = scroll.left + document.viewport.getWidth();
-
-              img.src = proxy + meta.uri;
-              img.width = width;
-              img.height = height;
-              img.observe("load", function(e) {
-                e.findElement("img").removeClassName("loading");
-              });
-              link.href = proxy + meta.uri;
-              link.target = "_blank";
-              link.insert(img);
-              div.insert(link);
-              div.insert('<p><span class="dimensions">'+meta.width+' <span class="ex">x</span> '+meta.height+'</span><span class="title">'+meta.title+'</span></p>');
-              div.observe("mouseout", function (e) {
-                div.hide();
-              });
-              li.insert(div);
-
-              var left = offset.left + scroll.left;
-              var left_overflow = ((div.getWidth() - li.getWidth()) / 2);
-              left = Math.max(0, left - left_overflow);
-              left = Math.min(left, right - div.getWidth());
-
-              var top = offset.top + scroll.top;
-              var top_overflow = ((div.getHeight() - li.getHeight()) / 2);
-              top = Math.max(0, top - top_overflow);
-              top = Math.min(top, bottom - div.getHeight());
-
-              div.setStyle({
-                left: left+"px",
-                top: top+"px",
-                width: width,
-                visibility: "visible",
-              });
+              else {
+                addPopup(li);
+              }
+              positionPopup(li);
             }, 500);
           }
         });
-        document.observe("mouseout", function(e) {
-          if (e.findElement("li")) {
+
+        document.observe("mouseover", function(e) {
+          var li = e.findElement("li");
+          if (!li) {
             if (timer) clearTimeout(timer);
+            hidePopups();
           }
         });
+
+        window.onscroll = function(e) {
+          if (active) positionPopup(active);
+        };
+
         document.observe("click", function(e) {
-          if (!e.findElement("li"))
-            $('images').select("div.popup").invoke("hide");
+          if (!e.findElement("li")) {
+            hidePopups();
+          }
         });
+
         $('images').observe("click", function(e) {
           if (!e.findElement("a.outgoing"))
             e.stop();
         });
+
         $('search').observe("submit", function(e) {
           e.stop();
-          new Ajax.Request("api", {
+          $('submit').disable();
+          $('query').disable();
+          new Ajax.Request("/coverart/api", {
             parameters: {query: $('query').value},
             onSuccess: function(transport) {
               var data = transport.responseText.evalJSON();
+              $('submit').enable();
+              $('query').enable();
               var list = $('images');
               list.innerHTML = "";
               data.each(function (image) {
@@ -106,10 +166,13 @@
   </head>
   <body>
     <form id="search">
+      <h1>Cover art search</h1>
       <input type="search" id="query" name="query" placeholder="Artist and album name" value="" />
       <input type="submit" id="submit" value="Search" />
+      <div id="note">images from <a href="http://www.discogs.com" rel="noreferrer" target="_blank">discogs.com</a></div>
     </form>
     <ul id="images">
     </ul>
+    <hr class="clear" />
   </body>
 </html>

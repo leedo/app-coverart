@@ -112,6 +112,7 @@ sub get_release_data {
 
   # after 10 seconds just send what we have
   $timer = AnyEvent->timer(after => 10, cb => sub {
+    print STDERR "Canceled image downloads early...\n";
     $count = 0;
     @downloads = (); # cancel any downloads
     $next->();
