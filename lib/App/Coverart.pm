@@ -136,6 +136,9 @@ sub get_release_data {
       my $more = [];
       if ($xs->{stat} eq 'ok' && $xs->{release} > 0) {
         $more = $xs->{release}{images}{image};
+        if ($xs->{release}{released} =~ /^(\d{4})/) {
+          $title .= " ($1)";
+        }
         $more = [ map {$_->{title} = $title; $_} @$more ];
         $self->cache->set("release-$id", $more, 60 * 60 * 24 * 30);
       }
