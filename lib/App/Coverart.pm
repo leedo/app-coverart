@@ -60,8 +60,8 @@ sub search {
       return;
     }
 
-    if (0) { #my $releases = $self->cache->get("query-$query")) {
-      #$self->get_release_data($releases, $respond);
+    if (my $releases = $self->cache->get("query-$query")) {
+      $self->get_release_data($releases, $respond);
     }
     else {
       my $releases = [];
@@ -74,7 +74,7 @@ sub search {
       my $done = sub {
         undef $idle_w;
         if (@$releases) {
-          $self->cache->set("query-$query", $releases, 60 * 60 * 24);
+          $self->cache->set("query-$query", $releases, 60 * 60 * 24 * 30); # cache for 1 month
           $self->get_release_data($releases, $respond);
         } else {
           $respond->($empty);
