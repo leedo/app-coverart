@@ -65,14 +65,18 @@ sub search {
     }
     else {
       my $releases = [];
-      my ($end, @searches, $idle_w);
+      my ($end, @searches, $idle_w, $error);
       my $open_searches = 0;
       my $page = 1;
       my $max_pages = 5;
 
       my $done = sub {
         undef $idle_w;
-        if (@$releases) {
+        @searches = ();
+        if ($error) {
+          $respond->([503, [], [$error]]);
+        }
+        elsif (@$releases) {
           $self->cache->set("query-$query", $releases, 60 * 60 * 24 * 30); # cache for 1 month
           $self->get_release_data($releases, $respond);
         } else {
@@ -81,7 +85,13 @@ sub search {
       };
 
       $idle_w = AE::idle sub {
-        return if $end;
+        if ($end and !$open_searches) {
+          $done->();
+          return;
+        }
+
+        return if $page > $max_pages;
+
         $open_searches++;
 
         my $my_page = $page++;
@@ -91,18 +101,24 @@ sub search {
           my ($body, $headers) = @_;
 
           $open_searches--;
+          my @results;
 
           gunzip \$body => \(my $xml);
           my $xs = eval { XMLin($xml, ForceArray => ['result']); };
 
           if ($xs and $xs->{stat} eq 'ok' and $xs->{searchresults}{numResults} > 0) {
-            my @results = map {[$_->{title}, $_->{uri}]} @{ $xs->{searchresults}{result}};
+            @results = map {[$_->{title}, $_->{uri}]} @{ $xs->{searchresults}{result}};
 
-            $end = $my_page if (!@results or $my_page > $max_pages);
             push @$releases, @results;
           }
+          elsif ($xs and $xs->{error}) {
+            $error = $xs->{error};
+            warn $error;
+            $done->();
+            return;
+          }
 
-          $done->() if ($end and !$open_searches);
+          $end = $my_page if (!@results or $my_page >= $max_pages);
         };
       };
     }

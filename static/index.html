@@ -1,12 +1,12 @@
 <html>
   <head>
     <title>Cover art search</title>
-    <link type="text/css" rel="stylesheet" href="/css/coverart.css" />
-    <script src="/js/prototype.js" type="text/javascript"></script>
+    <link type="text/css" rel="stylesheet" href="css/coverart.css" />
+    <script src="js/prototype.js" type="text/javascript"></script>
     <script type="text/javascript">
       document.observe("dom:loaded", function() {
         var timer;
-        var proxy = "/cover/";
+        var proxy = "cover/";
         var active;
 
         var addPopup = function(li) {
@@ -143,6 +143,9 @@
           $('query').disable();
           new Ajax.Request("/api", {
             parameters: {query: $('query').value},
+            on503: function(transport) {
+              alert(transport.responseText);
+            },
             onSuccess: function(transport) {
               var data = transport.responseText.evalJSON();
               $('submit').enable();
