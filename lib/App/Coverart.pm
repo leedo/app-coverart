@@ -68,7 +68,6 @@ sub search {
       my ($end, @searches, $idle_w);
       my $open_searches = 0;
       my $page = 1;
-      my $max_conn = 5;
       my $max_pages = 5;
 
       my $done = sub {
@@ -82,7 +81,7 @@ sub search {
       };
 
       $idle_w = AE::idle sub {
-        return if $end or $open_searches > $max_conn;
+        return if $end;
         $open_searches++;
 
         my $my_page = $page++;
@@ -119,7 +118,6 @@ sub get_release_data {
 
   my $images = [];
   my (@downloads, $timer, $idle_w);
-  my $max = 5;
   my $count = scalar @$releases;
   my $open_downloads = 0;
 
@@ -143,7 +141,6 @@ sub get_release_data {
   });
 
   $idle_w = AE::idle sub {
-    return if $open_downloads > $max;
     $open_downloads++;
 
     if (!$count) {
