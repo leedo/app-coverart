@@ -60,29 +60,51 @@ sub search {
       return;
     }
 
-    if (my $releases = $self->cache->get("query-$query")) {
-      $self->get_release_data($releases, $respond);
+    if (0) { #my $releases = $self->cache->get("query-$query")) {
+      #$self->get_release_data($releases, $respond);
     }
     else {
-      my $search = $self->discogs_uri("search", type => "releases", q => $query);
+      my $releases = [];
+      my ($end, @searches, $idle_w);
+      my $open_searches = 0;
+      my $page = 1;
+      my $max_conn = 5;
+      my $max_pages = 5;
 
-      http_get $search, headers => {"Accept-Encoding" => "gzip"}, sub {
-        my ($body, $headers) = @_;
-        gunzip \$body => \(my $xml);
-
-        my $xs = XMLin($xml, ForceArray => ['result']);
-
-        if ($xs->{stat} eq 'ok' && $xs->{searchresults}{numResults} > 0) {
-          my  $releases = [ map {[$_->{title}, $_->{uri}]} @{ $xs->{searchresults}{result}} ];
+      my $done = sub {
+        undef $idle_w;
+        if (@$releases) {
           $self->cache->set("query-$query", $releases, 60 * 60 * 24);
-          if (@$releases) {
-            # get images for each release
-            $self->get_release_data($releases, $respond);
-            return;
-          }
+          $self->get_release_data($releases, $respond);
+        } else {
+          $respond->($empty);
         }
-        # fall back to empty response
-        $respond->($empty);
+      };
+
+      $idle_w = AE::idle sub {
+        return if $end or $open_searches > $max_conn;
+        $open_searches++;
+
+        my $my_page = $page++;
+        my $uri = $self->discogs_uri("search", type => "releases", q => $query, page => $my_page);
+
+        push @searches, http_get $uri, headers => {"Accept-Encoding" => "gzip"}, sub {
+          my ($body, $headers) = @_;
+
+          $open_searches--;
+
+          gunzip \$body => \(my $xml);
+          my $xs = eval { XMLin($xml, ForceArray => ['result']); };
+
+          if ($xs and $xs->{stat} eq 'ok' and $xs->{searchresults}{numResults} > 0) {
+            my @results = map {[$_->{title}, $_->{uri}]} @{ $xs->{searchresults}{result}};
+
+            $end = $my_page if (!@results or $my_page > $max_pages);
+            push @$releases, @results;
+          }
+
+          $done->() if ($end and !$open_searches);
+        };
       };
     }
   }
@@ -91,61 +113,75 @@ sub search {
 sub get_release_data {
   my ($self, $releases, $respond) = @_;
 
-  my $images = [];
-  my $count = scalar @$releases;
-  my @downloads;
-  my $timer;
-
   if (!@$releases) {
     $respond->([200, ["Content-Type", "text/json"], ["[]"]]);
   }
 
+  my $images = [];
+  my (@downloads, $timer, $idle_w);
+  my $max = 5;
+  my $count = scalar @$releases;
+  my $open_downloads = 0;
+
+  my $done = sub {
+    undef $timer; # cancel timer
+    undef $idle_w; # cancel idle timer
+    $respond->([200, ["Content-Type", "text/json"], [to_json $images, {utf8 => 1}]]);
+  };
+
   my $next = sub {
     my $more = shift;
-    push @$images, @$more if $more;
+    push @$images, @$more;
+    $open_downloads--;
     $count--;
-    if ($count <= 0) {
-      undef $timer; # cancel timer
-      $respond->([200, ["Content-Type", "text/json"], [to_json $images, {utf8 => 1}]]);
-    }
   };
 
   # after 10 seconds just send what we have
   $timer = AnyEvent->timer(after => 10, cb => sub {
-    print STDERR "Canceled image downloads early...\n";
-    $count = 0;
     @downloads = (); # cancel any downloads
-    $next->();
+    $done->();
   });
- 
-  for my $release (@$releases) {
+
+  $idle_w = AE::idle sub {
+    return if $open_downloads > $max;
+    $open_downloads++;
+
+    if (!$count) {
+      $done->();
+      return;
+    }
+
+    my $release = shift @$releases;
+    return unless $release;
+
     my ($title, $uri) = @$release;
     my ($id) = ($uri =~ /(\d+)$/);
-    my $release = $self->discogs_uri("release/$id");
+    $uri = $self->discogs_uri("release/$id");
 
     if (my $more = $self->cache->get("release-$id")) {
-      $next->($more); 
-      next;
+      $next->($more);
+      return;
     }
-          
-    my $download = http_get $release, headers => {"Accept-Encoding" => "gzip"}, sub {
-      my ($body, $headers) = @_;
-      gunzip \$body => \(my $xml);
 
-      my $xs = XMLin($xml, ForceArray => ['image']);
+    push @downloads, http_get $uri, headers => {"Accept-Encoding" => "gzip"}, sub {
+      my ($body, $headers) = @_;
       my $more = [];
+
+      gunzip \$body => \(my $xml);
+      my $xs = XMLin($xml, ForceArray => ['image']);
+
       if ($xs->{stat} eq 'ok' && $xs->{release} > 0) {
         $more = $xs->{release}{images}{image};
-        if ($xs->{release}{released} =~ /^(\d{4})/) {
+        if ($xs->{release}{released} and  $xs->{release}{released} =~ /^(\d{4})/) {
           $title .= " ($1)";
         }
-        $more = [ map {$_->{title} = $title; $_} @$more ];
+        $more = [ map {$_->{title} = $title; $_} grep {$_->{type} eq "primary"} @$more ];
         $self->cache->set("release-$id", $more, 60 * 60 * 24 * 30);
       }
+
       $next->($more);
     };
-    push @downloads, $download;
-  }
+  };
 }
 
 sub discogs_uri {
